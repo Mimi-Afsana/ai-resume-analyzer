@@ -1,105 +1,106 @@
 import { useState } from "react";
 import "./App.css";
-import { Document, Page } from "react-pdf";
+import { pdfjs } from "react-pdf";
+
+// PDF worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 function App() {
   const [jobRole, setJobRole] = useState("");
   const [resumeText, setResumeText] = useState("");
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
-  const [pdfFile, setPdfFile] = useState(null);
 
-  // PDF Upload and Read
+  // PDF upload
   const handlePdfUpload = (e) => {
     const file = e.target.files[0];
-    setPdfFile(file);
+    if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = function (event) {
+    reader.onload = async (event) => {
       const typedArray = new Uint8Array(event.target.result);
-      import("pdfjs-dist").then((pdfjsLib) => {
-        pdfjsLib.GlobalWorkerOptions.workerSrc =
-          `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.js`;
-        pdfjsLib.getDocument(typedArray).promise.then((pdf) => {
-          let allText = "";
-          let pagesPromises = [];
-          for (let i = 1; i <= pdf.numPages; i++) {
-            pagesPromises.push(
-              pdf.getPage(i).then((page) =>
-                page.getTextContent().then((textContent) => {
-                  const pageText = textContent.items.map((s) => s.str).join(" ");
-                  allText += pageText + "\n";
-                })
-              )
-            );
-          }
-          Promise.all(pagesPromises).then(() => {
-            setResumeText(allText);
+      try {
+        const pdf = await pdfjs.getDocument(typedArray).promise;
+        const linesSet = new Set();
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          content.items.forEach((item) => {
+            const line = item.str.trim();
+            if (line) linesSet.add(line);
           });
-        });
-      });
+        }
+        setResumeText(Array.from(linesSet).join("\n\n"));
+      } catch (err) {
+        console.error("PDF parse error:", err);
+        alert("Error reading PDF. Make sure it's not corrupted.");
+      }
     };
     reader.readAsArrayBuffer(file);
   };
 
-  // Analyze Resume
-  const analyzeResume = async () => {
+  // Dynamic Mock AI analyze
+  const analyzeResume = () => {
     if (!resumeText || !jobRole) {
-      alert("Enter job role and upload/paste resume.");
+      alert("Enter Job Role and upload/paste resume");
       return;
     }
+
     setLoading(true);
+    setResult("");
 
-    try {
-      const response = await fetch(
-        "https://api.openai.com/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer YOUR_OPENAI_API_KEY`,
-          },
-          body: JSON.stringify({
-            model: "gpt-4o-mini",
-            messages: [
-              { role: "system", content: "You are an expert HR resume analyzer." },
-              {
-                role: "user",
-                content: `
-Analyze this resume for the role of ${jobRole}.
+    setTimeout(() => {
+      // Define skills
+      const skills = [
+        "React",
+        "JavaScript",
+        "CSS",
+        "Node.js",
+        "TypeScript",
+        "HTML",
+        "Python",
+        "SQL",
+        "AI",
+        "Machine Learning",
+      ];
 
-Resume:
-${resumeText}
-
-Give:
-1. Skill match percentage
-2. Strengths
-3. Missing skills
-4. Improvement tips
-                `,
-              },
-            ],
-          }),
-        }
+      // Detect skills in resume
+      const foundSkills = skills.filter((s) =>
+        resumeText.toLowerCase().includes(s.toLowerCase())
       );
-      const data = await response.json();
-      setResult(data.choices[0].message.content);
-    } catch (error) {
-      alert("Error analyzing resume");
-      console.error(error);
-    }
+      const missingSkills = skills.filter((s) => !foundSkills.includes(s));
 
-    setLoading(false);
+      // Skill match % + random variation
+      let skillMatch = Math.round((foundSkills.length / skills.length) * 100);
+      skillMatch += Math.floor(Math.random() * 5); // +0 to +4%
+      if (skillMatch > 100) skillMatch = 100;
+
+      // Strengths / Improvement tips
+      const aiResponse = `
+Job Role: ${jobRole}
+
+Skill Match: ${skillMatch}%
+Strengths: ${foundSkills.join(", ") || "None"}
+Missing Skills: ${missingSkills.join(", ") || "None"}
+Improvement Tips:
+- Focus on missing skills: ${missingSkills.slice(0, 3).join(", ") || "None"}
+- Practice real-world projects with ${jobRole} focus
+- Keep updating skills regularly
+`;
+
+      setResult(aiResponse);
+      setLoading(false);
+    }, 1200); // simulate loading
   };
 
   return (
     <div className="container">
       <div className="card">
-        <h1>AI Resume Analyser</h1>
+        <h1>AI Resume Analyzer (Mock)</h1>
 
         <input
           type="text"
-          placeholder="Job Role (e.g. React Developer)"
+          placeholder="Job Role"
           value={jobRole}
           onChange={(e) => setJobRole(e.target.value)}
         />
@@ -112,7 +113,7 @@ Give:
           onChange={(e) => setResumeText(e.target.value)}
         />
 
-        <button onClick={analyzeResume}>
+        <button onClick={analyzeResume} disabled={loading}>
           {loading ? "Analyzing..." : "Analyze Resume"}
         </button>
 
