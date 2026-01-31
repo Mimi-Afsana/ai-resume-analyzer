@@ -2,7 +2,6 @@ import { useState } from "react";
 import "./App.css";
 import { pdfjs } from "react-pdf";
 
-// PDF worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 function App() {
@@ -11,124 +10,125 @@ function App() {
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // PDF upload
+  const roleSkillMap = {
+    "react developer": { major: ["react", "javascript", "html", "css"], minor: ["jsx", "hooks", "state", "props", "component"] },
+    "frontend developer": { major: ["html", "css", "javascript", "react"], minor: ["responsive", "tailwind", "bootstrap", "ui"] },
+    "backend developer": { major: ["node", "express", "mongodb", "api"], minor: ["authentication", "database", "jwt"] },
+    "javascript developer": { major: ["javascript", "es6", "dom", "async"], minor: ["promise", "api", "function"] },
+    "web developer": { major: ["html", "css", "javascript", "react"], minor: ["node", "api", "website"] },
+    "angular.js developer": { major: ["angular", "angularjs", "typescript", "html", "css"], minor: ["rxjs", "ngmodules", "services", "components"] }
+  };
+
+  const normalizeRole = (input) => {
+    const role = input.trim().toLowerCase();
+    const aliases = {
+      "angular.js developer": ["angular.js developer", "angular developer", "angularjs developer"],
+      "react developer": ["react developer", "react.js developer"],
+      "frontend developer": ["frontend developer", "ui developer"],
+      "backend developer": ["backend developer", "node developer"],
+      "javascript developer": ["javascript developer", "js developer"],
+      "web developer": ["web developer", "fullstack developer"]
+    };
+    for (let key in aliases) if (aliases[key].includes(role)) return key;
+    return "web developer";
+  };
+
   const handlePdfUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = async (event) => {
       const typedArray = new Uint8Array(event.target.result);
       try {
         const pdf = await pdfjs.getDocument(typedArray).promise;
-        const linesSet = new Set();
+        const textSet = new Set();
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const content = await page.getTextContent();
           content.items.forEach((item) => {
             const line = item.str.trim();
-            if (line) linesSet.add(line);
+            if (line) textSet.add(line);
           });
         }
-        setResumeText(Array.from(linesSet).join("\n\n"));
+        setResumeText([...textSet].join("\n"));
       } catch (err) {
-        console.error("PDF parse error:", err);
-        alert("Error reading PDF. Make sure it's not corrupted.");
+        alert("Error reading PDF.");
       }
     };
     reader.readAsArrayBuffer(file);
   };
 
-  // Dynamic Mock AI analyze
   const analyzeResume = () => {
     if (!resumeText || !jobRole) {
-      alert("Enter Job Role and upload/paste resume");
+      alert("Enter Job Role and resume");
       return;
     }
-
     setLoading(true);
     setResult("");
-
     setTimeout(() => {
-      // Define skills
-      const skills = [
-        "React",
-        "JavaScript",
-        "CSS",
-        "Node.js",
-        "TypeScript",
-        "HTML",
-        "Python",
-        "SQL",
-        "AI",
-        "Machine Learning",
-      ];
+      const roleKey = normalizeRole(jobRole);
+      const skills = roleSkillMap[roleKey];
+      const resumeLower = resumeText.toLowerCase().replace(/\./g, "").replace(/\s+/g, " ");
 
-      // Detect skills in resume
-      const foundSkills = skills.filter((s) =>
-        resumeText.toLowerCase().includes(s.toLowerCase())
-      );
-      const missingSkills = skills.filter((s) => !foundSkills.includes(s));
+      const foundMajor = skills.major.filter((s) => resumeLower.includes(s.toLowerCase()));
+      const foundMinor = skills.minor.filter((s) => resumeLower.includes(s.toLowerCase()));
+      const foundSkills = [...foundMajor, ...foundMinor];
 
-      // Skill match % + random variation
-      let skillMatch = Math.round((foundSkills.length / skills.length) * 100);
-      skillMatch += Math.floor(Math.random() * 5); // +0 to +4%
-      if (skillMatch > 100) skillMatch = 100;
+      const showMissing = roleKey !== "react developer";
+      const missingSkills = showMissing ? [...new Set([...skills.major, ...skills.minor].filter(s => !foundSkills.includes(s)))] : [];
 
-      // Strengths / Improvement tips
-      const aiResponse = `
+      const majorWeight = 80;
+      const minorWeight = 20;
+      const majorScore = (foundMajor.length / skills.major.length) * majorWeight;
+      const minorScore = (foundMinor.length / skills.minor.length) * minorWeight;
+      let score = majorScore + minorScore;
+
+      const totalSkillsCount = skills.major.length + skills.minor.length;
+      const missingCount = missingSkills.length;
+      const totalScoreBeforeDeduction = score;
+
+      let deduction = (totalScoreBeforeDeduction * missingCount) / totalSkillsCount;
+      deduction = Math.min(deduction, totalScoreBeforeDeduction * 0.7);
+      score = totalScoreBeforeDeduction - deduction;
+
+      if (resumeLower.includes("project")) score += 5;
+      if (resumeLower.includes("experience")) score += 5;
+      if (resumeLower.includes("github")) score += 5;
+
+      score = Math.max(0, Math.min(100, score));
+
+      const feedback = `
 Job Role: ${jobRole}
 
-Skill Match: ${skillMatch}%
-Strengths: ${foundSkills.join(", ") || "None"}
-Missing Skills: ${missingSkills.join(", ") || "None"}
-Improvement Tips:
-- Focus on missing skills: ${missingSkills.slice(0, 3).join(", ") || "None"}
-- Practice real-world projects with ${jobRole} focus
-- Keep updating skills regularly
-`;
+Skill Match: ${Math.round(score)}%
 
-      setResult(aiResponse);
+Strengths:
+${foundSkills.length ? "- " + foundSkills.join("\n- ") : "- Basic Web Skills"}
+
+Missing Skills:
+${missingSkills.length ? "- " + missingSkills.join("\n- ") : "- None"}
+
+Suggestions:
+- Focus on ${jobRole}-related projects
+- Add GitHub / portfolio links
+- Highlight tools, frameworks, achievements
+- Keep resume concise and role-focused
+`;
+      setResult(feedback);
       setLoading(false);
-    }, 1200); // simulate loading
+    }, 500);
   };
 
   return (
     <div className="container">
       <div className="card">
-        <h1>AI Resume Analyzer (Mock)</h1>
-
-        <input
-          type="text"
-          placeholder="Job Role"
-          value={jobRole}
-          onChange={(e) => setJobRole(e.target.value)}
-        />
-
+        <h1>Web Developer Resume Analyzer</h1>
+        <input type="text" placeholder="Job Role" value={jobRole} onChange={(e) => setJobRole(e.target.value)} />
         <input type="file" accept=".pdf" onChange={handlePdfUpload} />
-
-        <textarea
-          placeholder="Or paste resume here..."
-          value={resumeText}
-          onChange={(e) => setResumeText(e.target.value)}
-        />
-
-        <button onClick={analyzeResume} disabled={loading}>
-          {loading ? "Analyzing..." : "Analyze Resume"}
-        </button>
-
-        {loading && (
-          <div className="progress-bar">
-            <div className="progress" />
-          </div>
-        )}
-
-        {result && (
-          <div className="result">
-            <h3>Analysis Result</h3>
-            <pre>{result}</pre>
-          </div>
-        )}
+        <textarea placeholder="Or paste resume here..." rows="10" value={resumeText} onChange={(e) => setResumeText(e.target.value)} />
+        <button onClick={analyzeResume} disabled={loading}>{loading ? "Analyzing..." : "Analyze Resume"}</button>
+        {loading && <div className="progress-bar"><div className="progress" /></div>}
+        {result && <div className="result"><pre>{result}</pre></div>}
       </div>
     </div>
   );
